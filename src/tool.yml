@@ -2,6 +2,7 @@ tools:
   foobar:
     title: Foo Bar
     description: A dummy tool to exemplify the YAML file
+    command: "octave runTool.m"
     # removed this field - version: 0.1 # version should be provided by Git tags (e.g. v0.1.0)
     parameters:
       foo_int: 
@@ -19,7 +20,10 @@ tools:
       foo_array:
         type: integer
         array: true
+    data:
       foo_matrix:
-        type: asset # changed from file
+        extension: dat
+        description: A matrix file that can be read by numpy
       foo_csv:
-        type: asset # changed from file
+        extension: csv
+        description: A standard formatted CSV file, for autoloading using pandas
