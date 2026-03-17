@@ -3,90 +3,66 @@
 [![Docker Image CI](https://github.com/tool-spec/tool_template_octave/actions/workflows/docker-image.yml/badge.svg)](https://github.com/tool-spec/tool_template_octave/actions/workflows/docker-image.yml)
 [![DOI](https://zenodo.org/badge/558417725.svg)](https://doi.org/10.5281/zenodo.7645900)
 
-This is the template for a generic containerized Octave/Matlab tool following the [Tool Specification](https://tool-spec.github.io/tool-specs/) for reusable research software using Docker.
+Template repository for building an Octave tool that follows the [Tool Specification](https://tool-spec.github.io/tool-specs/) container contract.
 
-This template can be used to generate new Github repositories from it.
+## How `gotap` works here
 
-## How generic?
+This template installs [`gotap`](https://github.com/tool-spec/gotap) inside the image and uses it as the default runtime shim:
 
-Tools using this template can be run by the [toolbox-runner](https://github.com/tool-spec/tool-runner). 
-That is only convenience, the tools implemented using this template are independent of any framework.
-
-The main idea is to implement a common file structure inside container to load inputs and outputs of the 
-tool. The template shares this structures with the [Python template](https://github.com/tool-spec/tool_template_python), [NodeJS template](https://github.com/tool-spec/tool_template_node)
-and [R template](https://github.com/tool-spec/tool_template_r), but can be mimiced in any container.
-
-Each container needs at least the following structure:
-
+```Dockerfile
+CMD ["gotap", "run", "foobar", "--input-file", "/in/input.json"]
 ```
+
+At build time, `gotap generate` creates `get_parameters.m` from `src/tool.yml`. At runtime, `runTool.m` uses the generated helper to validate `/in/input.json`, load parameters and data paths, and write structured run logs.
+
+## Required file structure
+
+```text
 /
 |- in/
-|  |- parameters.json
+|  |- input.json
 |- out/
 |  |- ...
 |- src/
 |  |- tool.yml
-|  |- getParameters.m
-|  |- run.m
+|  |- runTool.m
+|  |- get_parameters.m   (generated at build time)
+|  |- CITATION.cff
 ```
 
-* `parameters.json` are parameters. Whichever framework runs the container, this is how parameters are passed.
-* `getParameters.m` is a utility function to parse the `parameters.json` including pre-loading of data files and returns a `struct`.
-* `tool.yml` is the tool specification. It contains metadata about the scope of the tool, the number of endpoints (functions) and their parameters
-* `run.m` is the tool itself, or a Octave/Matlab script that handles the execution. It has to capture all outputs and either `print` them to console or create files in `/out`
+## Build and run
 
-## Octave or Matlab?
+Build the image from the template root:
 
-Well, tools built from this image will run octave. The `getParameters.m` works for Matlab as well, but you need to install `jsonlab` to reuse the function in a real Matlab environment. Generally, the whole container should be moveable to a real Matlab base image, but you will need a Matlab license then.
-
-## How to build the image?
-
-You can build the image from within the root of this repo by
-```
-docker build -t tbr_octave_tempate .
+```bash
+docker build -t tbr_octave_template .
 ```
 
-Use any tag you like. If you want to run and manage the container with [toolbox-runner](https://github.com/tool-spec/tool-runner)
-they should be prefixed by `tbr_` to be recognized. 
+Run the sample tool:
 
-Alternatively, the contained `.github/workflows/docker-image.yml` will build the image for you 
-on new releases on Github. You need to change the target repository in the aforementioned yaml and the repository needs a 
-[personal access token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token)
-in the repository secrets in order to run properly.
-
-## How to run?
-
-This template uses `/src/getParameters.m` to parse the parameters in the `/in/parameters.json`. This assumes that
-the files are not renamed and not moved and there is actually only one tool in the container. For any other case, the environment variables
-`PARAM_FILE` can be used to specify a new location for the `parameters.json` and `TOOL_RUN` can be used to specify the tool to be executed.
-The `run.R` has to take care of that.
-
-To invoke the docker container directly run something similar to:
-```
-docker run --rm -it -v /path/to/local/in:/in -v /path/to/local/out:/out -e TOOL_RUN=foobar tbr_octave_template
+```bash
+docker run --rm -it \
+  -v "$(pwd)/in:/in" \
+  -v "$(pwd)/out:/out" \
+  -e TOOL_RUN=foobar \
+  tbr_octave_template
 ```
 
-Then, the output will be in your local out and based on your local input folder. Stdout and Stderr are also connected to the host.
+`TOOL_RUN` is only needed when the image contains more than one tool entry.
 
-With the [toolbox-runner](https://github.com/tool-spec/tool-runner) this is simplyfied. Note that this is a Python-only tool, to handle
-the execution of just any kind of tool from within a Python environment. Frameworks for other languages might be added.
+## Customize
 
-```python
-from toolbox_runner import list_tools
-tools = list_tools() # dict with tool names as keys
+1. Update `src/tool.yml` to describe your tool.
+2. Add Octave or system dependencies in `Dockerfile`.
+3. Implement the tool logic in `src/runTool.m`.
+4. Rebuild the image so `gotap generate` refreshes `get_parameters.m`.
 
-foobar = tools.get('foobar')  # it has to be present there...
-foobar.run(result_path='./', foo_int=1337, foo_string="Please change me")
-```
-The example above will create a temporary file structure to be mounted into the container and then create a `.tar.gz` on termination of all 
-inputs, outputs, specifications and some metadata, including the image sha256 used to create the output in the current working directory.
+## Generated bindings and platform note
 
-## What about real tools, no foobar?
+The generated `get_parameters.m` helper is the only supported parameter-access path in this template. It exposes:
 
-Yeah. 
+- `get_parameters()`
+- `get_run_context()`
+- `get_logger()`
 
-1. change the `tool.yml` to describe your actual tool
-2. add any `pkg install <package>` or `apt-get install` needed to the Dockerfile
-3. add additional source code to `/src`
-4. change the `run.m` to consume parameters and data from `/in` and useful output in `out`
-5. build, run, rock!
+On the current arm64 macOS Docker host, `gnuoctave/octave:8.1.0` does not publish a matching image manifest, so image builds are currently blocked by platform availability rather than by the template contract.
